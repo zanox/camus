@@ -1,15 +1,9 @@
 package com.linkedin.camus.etl.kafka.mapred;
 
-import java.io.BufferedOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.lang.reflect.Constructor;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
+import com.linkedin.camus.etl.DestinationFileAggregator;
+import com.linkedin.camus.etl.RecordWriterProvider;
+import com.linkedin.camus.etl.kafka.common.EtlCounts;
+import com.linkedin.camus.etl.kafka.common.EtlKey;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -21,9 +15,15 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputCommitter;
 import org.apache.log4j.Logger;
 import org.codehaus.jackson.map.ObjectMapper;
 
-import com.linkedin.camus.etl.RecordWriterProvider;
-import com.linkedin.camus.etl.kafka.common.EtlCounts;
-import com.linkedin.camus.etl.kafka.common.EtlKey;
+import java.io.BufferedOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.lang.reflect.Constructor;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 
 public class EtlMultiOutputCommitter extends FileOutputCommitter {
@@ -33,9 +33,10 @@ public class EtlMultiOutputCommitter extends FileOutputCommitter {
   private HashMap<String, EtlKey> offsets = new HashMap<String, EtlKey>();
   private HashMap<String, Long> eventCounts = new HashMap<String, Long>();
 
-  private TaskAttemptContext context;
-  private final RecordWriterProvider recordWriterProvider;
-  private Logger log;
+  private       TaskAttemptContext        context;
+  private final RecordWriterProvider      recordWriterProvider;
+  private final DestinationFileAggregator destinationFileAggregator;
+  private       Logger                    log;
 
   private void mkdirs(FileSystem fs, Path path) throws IOException {
     if (!fs.exists(path.getParent())) {
@@ -77,6 +78,7 @@ public class EtlMultiOutputCommitter extends FileOutputCommitter {
       Class<RecordWriterProvider> rwp = EtlMultiOutputFormat.getRecordWriterProviderClass(context);
       Constructor<RecordWriterProvider> crwp = rwp.getConstructor(TaskAttemptContext.class);
       recordWriterProvider = crwp.newInstance(context);
+      destinationFileAggregator = EtlMultiOutputFormat.getDestinationFileAggregator(context);
     } catch (Exception e) {
       throw new IllegalStateException(e);
     }
@@ -153,6 +155,8 @@ public class EtlMultiOutputCommitter extends FileOutputCommitter {
     if (!FileSystem.get(job.getConfiguration()).rename(source, target)) {
       log.error(String.format("Failed to move from %s to %s", source, target));
       throw new IOException(String.format("Failed to move from %s to %s", source, target));
+    } else {
+      destinationFileAggregator.addDestinationFile(target);
     }
   }
 
